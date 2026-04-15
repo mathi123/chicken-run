@@ -35,7 +35,7 @@ type Obstacle = {
   scored: boolean;
 };
 
-type Phase = "intro" | "calibrate" | "running" | "gameover";
+type Phase = "pickCharacter" | "micSetup" | "briefing" | "running" | "gameover";
 
 const VOICE_STORAGE_KEY = "tok-chicken-voice-v1";
 const CHARACTER_STORAGE_KEY = "tok-chicken-character-v1";
@@ -71,9 +71,9 @@ type VoiceSettings = {
 };
 
 const defaultVoiceSettings: VoiceSettings = {
-  sensitivity: 72,
-  boundaryMs: 340,
-  rawProcessing: false,
+  sensitivity: 70,
+  boundaryMs: 280,
+  rawProcessing: true,
   deviceId: "",
 };
 
@@ -86,7 +86,8 @@ function loadVoiceSettings(): VoiceSettings {
     return {
       sensitivity: clampNum(parsed.sensitivity, 1, 100, defaultVoiceSettings.sensitivity),
       boundaryMs: clampNum(parsed.boundaryMs, 220, 560, defaultVoiceSettings.boundaryMs),
-      rawProcessing: typeof parsed.rawProcessing === "boolean" ? parsed.rawProcessing : false,
+      rawProcessing:
+        typeof parsed.rawProcessing === "boolean" ? parsed.rawProcessing : defaultVoiceSettings.rawProcessing,
       deviceId: typeof parsed.deviceId === "string" ? parsed.deviceId : "",
     };
   } catch {
@@ -101,7 +102,7 @@ function clampNum(n: unknown, min: number, max: number, fallback: number) {
 
 /** Thresholds for float time-domain RMS from the analyser (see `useVoiceActions`). */
 function sensitivityToThresholds(sensitivity: number) {
-  const s = clampNum(sensitivity, 1, 100, 72);
+  const s = clampNum(sensitivity, 1, 100, 70);
   const open = 0.06 - (s / 100) * (0.06 - 0.0025);
   const close = Math.max(0.0012, open * 0.52);
   return { openThreshold: open, closeThreshold: close };
@@ -1106,7 +1107,7 @@ function drawCloud(ctx: CanvasRenderingContext2D, x: number, y: number, s: numbe
 
 export function ChickenRunGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [phase, setPhase] = useState<Phase>("intro");
+  const [phase, setPhase] = useState<Phase>("pickCharacter");
   const phaseRef = useRef(phase);
 
   /** Default on server + first client paint so SSR HTML matches hydration (LS hydrated in useEffect). */
@@ -1158,7 +1159,7 @@ export function ChickenRunGame() {
   }, [character]);
 
   const onUtteranceLog = useCallback((kind: "tok" | "taaaak", durationMs: number) => {
-    if (phaseRef.current !== "calibrate") return;
+    if (phaseRef.current !== "micSetup") return;
     setTestLog((prev) => [{ kind, ms: durationMs, at: Date.now() }, ...prev].slice(0, 10));
   }, []);
 
@@ -1279,17 +1280,22 @@ export function ChickenRunGame() {
     });
   }, [startListening, stopListening, voice.deviceId, voice.rawProcessing]);
 
-  const beginGameFromCalibration = useCallback(() => {
+  const beginRunFromBriefing = useCallback(() => {
     resetRun();
     setPhase("running");
   }, [resetRun]);
 
-  const goToCalibration = useCallback(() => {
+  const goToMicSetup = useCallback(() => {
     stopListening();
     setTestLog([]);
     setCalibrateMoreOpen(false);
-    setPhase("calibrate");
+    setPhase("micSetup");
   }, [stopListening]);
+
+  const goToBriefing = useCallback(() => {
+    setCalibrateMoreOpen(false);
+    setPhase("briefing");
+  }, []);
 
   const playAgain = useCallback(async () => {
     setTestLog([]);
@@ -1343,8 +1349,9 @@ export function ChickenRunGame() {
       g.groundY = h * (1 - GROUND_RATIO);
       g.chickenX = w * CHICKEN_X_RATIO;
       if (
-        phaseRef.current === "intro" ||
-        phaseRef.current === "calibrate" ||
+        phaseRef.current === "pickCharacter" ||
+        phaseRef.current === "micSetup" ||
+        phaseRef.current === "briefing" ||
         phaseRef.current === "gameover"
       ) {
         g.chickenY = g.groundY;
@@ -1584,7 +1591,7 @@ export function ChickenRunGame() {
       )}
 
       {/* Mic pill */}
-      {(phase === "running" || phase === "calibrate") && (
+      {(phase === "running" || phase === "micSetup" || phase === "briefing") && (
         <div className="pointer-events-none absolute inset-x-0 top-[max(0.75rem,env(safe-area-inset-top))] z-10 flex justify-center px-3 pt-0.5">
           <div
             className={`flex max-w-[calc(100vw-1.5rem)] items-center gap-2 rounded-full px-4 py-2 text-sm font-bold shadow-md ring-2 sm:max-w-none ${
@@ -1599,18 +1606,18 @@ export function ChickenRunGame() {
               }`}
             />
             {micOn
-              ? phase === "calibrate"
-                ? "Mic aan — probeer tok / taaaak!"
-                : "Mic aan — zeg tok / taaaak!"
+              ? phase === "running"
+                ? "Mic aan — zeg tok / taaaak!"
+                : "Mic aan — probeer tok / taaaak!"
               : "Mic uit"}
           </div>
         </div>
       )}
 
-      {phase === "intro" && (
+      {phase === "pickCharacter" && (
         <div className="absolute inset-0 z-30 flex items-center justify-center overflow-y-auto overscroll-y-contain bg-sky-500/35 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] backdrop-blur-[2px] sm:p-6">
           <div className="my-auto max-h-[min(92dvh,40rem)] w-full max-w-md overflow-y-auto overscroll-y-contain rounded-[2rem] border-4 border-white bg-white/95 px-4 py-6 text-center shadow-2xl ring-4 ring-amber-200/80 sm:p-8">
-            <p className="text-sm font-bold uppercase tracking-widest text-sky-500">Stemrun</p>
+            <p className="text-sm font-bold uppercase tracking-widest text-sky-500">Stap 1</p>
             <h1 className="mt-2 text-3xl font-black text-amber-500 drop-shadow-sm md:text-4xl">
               Tok &amp; vrienden
             </h1>
@@ -1664,46 +1671,23 @@ export function ChickenRunGame() {
                 </button>
               ))}
             </div>
-            <p className="mt-4 text-base leading-relaxed text-slate-600">
-              Zeg <span className="font-black text-amber-600">«tok»</span> om een stap op het pad te zetten, en{" "}
-              <span className="font-black text-sky-600">«taaaak»</span> (langer!) om te springen — je gaat eerst{" "}
-              <strong>omhoog</strong>, dan vooruit op het hoogtepunt van de sprong zodat je obstakels wipt in plaats van
-              erin te schuiven.
-            </p>
-            <ul className="mt-4 space-y-2 text-left text-sm text-slate-600">
-              <li className="flex gap-2">
-                <span className="text-lg">🐤</span>
-                <span>
-                  <strong>Korte</strong> piep → één stap vooruit.
-                </span>
-              </li>
-              <li className="flex gap-2">
-                <span className="text-lg">🪽</span>
-                <span>
-                  <strong>Lange</strong> piep → spring omhoog, dan vooruit op het hoogtepunt.
-                </span>
-              </li>
-            </ul>
             <button
               type="button"
-              onClick={goToCalibration}
-              className="mt-6 w-full rounded-2xl bg-gradient-to-r from-emerald-400 to-teal-400 py-4 text-lg font-black text-white shadow-[0_8px_0_#0f766e] transition hover:brightness-105 active:translate-y-1 active:shadow-none"
+              onClick={goToMicSetup}
+              className="mt-8 w-full rounded-2xl bg-gradient-to-r from-emerald-400 to-teal-400 py-4 text-lg font-black text-white shadow-[0_8px_0_#0f766e] transition hover:brightness-105 active:translate-y-1 active:shadow-none"
             >
-              Microfoon instellen
+              Verder
             </button>
-            <p className="mt-3 text-xs text-slate-400">
-              Je test het niveau en start daarna de run. Tijdens de run alleen met je stem — tok en taaaak.
-            </p>
           </div>
         </div>
       )}
 
-      {phase === "calibrate" && (
+      {phase === "micSetup" && (
         <div className="absolute inset-0 z-30 overflow-y-auto overscroll-y-contain bg-sky-600/40 px-4 pb-[calc(7.5rem+env(safe-area-inset-bottom,0px))] pt-[max(1rem,env(safe-area-inset-top,0px))] backdrop-blur-[2px] md:pb-[calc(8.5rem+env(safe-area-inset-bottom,0px))]">
           <div className="mx-auto my-4 max-w-lg rounded-[2rem] border-4 border-white bg-white/95 p-5 shadow-2xl ring-4 ring-amber-200/70 sm:p-6 md:p-8">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-sky-500">Stap 1</p>
+                <p className="text-xs font-bold uppercase tracking-widest text-sky-500">Stap 2</p>
                 <h2 className="text-2xl font-black text-amber-500">Microfooncheck</h2>
               </div>
               <button
@@ -1711,7 +1695,7 @@ export function ChickenRunGame() {
                 onClick={() => {
                   stopListening();
                   setCalibrateMoreOpen(false);
-                  setPhase("intro");
+                  setPhase("pickCharacter");
                 }}
                 className="rounded-full border-2 border-slate-200 px-3 py-1 text-xs font-bold text-slate-600"
               >
@@ -1721,8 +1705,8 @@ export function ChickenRunGame() {
 
             <p className="mt-3 text-sm leading-relaxed text-slate-600">
               Als de browser vraagt om toestemming, <span className="font-black text-emerald-700">sta de microfoon toe</span>.
-              Daarna kun je met <span className="font-black text-slate-800">Start spel</span> beginnen; onder{" "}
-              <span className="font-black text-slate-800">Meer opties</span> vind je extra instellingen.
+              Daarna tik je op <span className="font-black text-slate-800">Verder</span> voor de uitleg en start. Onder{" "}
+              <span className="font-black text-slate-800">Meer opties</span> kun je de microfoon finetunen.
             </p>
 
             {errorMessage && (
@@ -1740,17 +1724,17 @@ export function ChickenRunGame() {
 
             {micOn && (
               <p className="mt-3 text-center text-sm font-semibold text-emerald-800">
-                Microfoon staat klaar — tik op <span className="font-black">Start spel</span> wanneer je wilt.
+                Microfoon staat klaar — tik op <span className="font-black">Verder</span> voor stap 3.
               </p>
             )}
 
             <button
               type="button"
-              onClick={beginGameFromCalibration}
+              onClick={goToBriefing}
               disabled={!micOn}
               className="mt-4 w-full rounded-2xl bg-gradient-to-r from-amber-400 to-orange-400 py-4 text-lg font-black text-white shadow-[0_8px_0_#c2410c] active:translate-y-1 active:shadow-none disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Start spel
+              Verder
             </button>
             {!micOn && (
               <p className="mt-2 text-center text-xs font-semibold text-rose-600">
@@ -1955,6 +1939,68 @@ export function ChickenRunGame() {
         </div>
       )}
 
+      {phase === "briefing" && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center overflow-y-auto overscroll-y-contain bg-sky-500/35 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] backdrop-blur-[2px] sm:p-6">
+          <div className="my-auto max-h-[min(92dvh,42rem)] w-full max-w-md overflow-y-auto overscroll-y-contain rounded-[2rem] border-4 border-white bg-white/95 px-4 py-6 text-center shadow-2xl ring-4 ring-amber-200/80 sm:p-8">
+            <div className="flex items-start justify-between gap-3 text-left">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-sky-500">Stap 3</p>
+                <h2 className="mt-1 text-2xl font-black text-amber-500">Zo speel je</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPhase("micSetup")}
+                className="shrink-0 rounded-full border-2 border-slate-200 px-3 py-1 text-xs font-bold text-slate-600"
+              >
+                Terug
+              </button>
+            </div>
+
+            <p className="mt-4 text-left text-base leading-relaxed text-slate-600">
+              Zeg <span className="font-black text-amber-600">«tok»</span> om een stap op het pad te zetten, en{" "}
+              <span className="font-black text-sky-600">«taaaak»</span> (langer!) om te springen — je gaat eerst{" "}
+              <strong>omhoog</strong>, dan vooruit op het hoogtepunt van de sprong zodat je obstakels wipt in plaats van
+              erin te schuiven.
+            </p>
+            <ul className="mt-4 space-y-2 text-left text-sm text-slate-600">
+              <li className="flex gap-2">
+                <span className="text-lg">🐤</span>
+                <span>
+                  <strong>Korte</strong> piep → één stap vooruit.
+                </span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-lg">🪽</span>
+                <span>
+                  <strong>Lange</strong> piep → spring omhoog, dan vooruit op het hoogtepunt.
+                </span>
+              </li>
+            </ul>
+            <p className="mt-4 text-left text-xs text-slate-500">
+              Tijdens de run stuur je alleen met je stem — tok en taaaak.
+            </p>
+
+            {errorMessage && (
+              <p className="mt-4 rounded-xl bg-rose-100 px-3 py-2 text-left text-sm text-rose-800">{errorMessage}</p>
+            )}
+
+            <button
+              type="button"
+              onClick={beginRunFromBriefing}
+              disabled={!micOn}
+              className="mt-8 w-full rounded-2xl bg-gradient-to-r from-amber-400 to-orange-400 py-4 text-lg font-black text-white shadow-[0_8px_0_#c2410c] active:translate-y-1 active:shadow-none disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Start spel
+            </button>
+            {!micOn && (
+              <p className="mt-2 text-center text-xs font-semibold text-rose-600">
+                Microfoon staat uit — ga terug naar stap 2 om de microfoon aan te zetten.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       {phase === "gameover" && (
         <div className="absolute inset-0 z-30 flex items-center justify-center overflow-y-auto overscroll-y-contain bg-rose-500/25 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] backdrop-blur-[2px] sm:p-6">
           <div className="my-auto max-h-[min(90dvh,32rem)] w-full max-w-md overflow-y-auto overscroll-y-contain rounded-[2rem] border-4 border-white bg-white/95 p-6 text-center shadow-2xl sm:p-8">
@@ -1978,7 +2024,7 @@ export function ChickenRunGame() {
                 type="button"
                 onClick={() => {
                   stopListening();
-                  setPhase("intro");
+                  setPhase("pickCharacter");
                 }}
                 className="w-full rounded-2xl border-2 border-slate-200 py-3 text-sm font-bold text-slate-600"
               >

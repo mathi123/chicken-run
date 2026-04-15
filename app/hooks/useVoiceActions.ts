@@ -78,7 +78,7 @@ const defaultDetection: Required<
   openThreshold: 0.018,
   closeThreshold: 0.009,
   minUtteranceMs: 45,
-  shortLongBoundaryMs: 340,
+  shortLongBoundaryMs: 280,
   maxUtteranceMs: 2800,
   cooldownMs: 260,
   smoothingTimeConstant: 0.22,
